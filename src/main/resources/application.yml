@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    hikari:
+      jdbc-url: jdbc:postgresql://localhost:5432/spring_batch?useUnicode=true&characterEncoding=utf8
+      username: postgres
+      password: password
+      driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+  config:
+    activate:
+      on-profile: local
