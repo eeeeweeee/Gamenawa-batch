@@ -9,6 +9,7 @@ import com.jayway.jsonpath.JsonPath;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.minidev.json.JSONArray;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
@@ -17,7 +18,11 @@ import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
+
+import static com.gamenawa.gamenawabatch.constant.JsonPathConstants.*;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -38,19 +43,6 @@ public class BatchGameInfo {
     }
 
     @Bean
-    public Step cleanAllGameIdsAndNames() {
-        return stepBuilderFactory
-                .get("CleanGameIdsAndNames")
-                .tasklet(((contribution, chunkContext) -> {
-                    log.info("Start clean game ids and names...");
-                    gameRepository.deleteAll();
-                    log.info("Finished clean game ids and names!");
-                    return RepeatStatus.FINISHED;
-                }))
-                .build();
-    }
-
-    @Bean
     public Step getNewGameIdsAndNames() {
         return stepBuilderFactory
                 .get("GetGameIdsAndNames")
@@ -58,45 +50,28 @@ public class BatchGameInfo {
                     log.info("Start get game ids and names...");
                     List<App> games = steamAppClient.getAllGames().getApplist().getApps();
                     for (int i = 0; i < games.size(); i++) {
-                        App game = games.get(i);
-                        if (!game.getName().isEmpty() && gameRepository.findByAppid(game.getAppid()).isEmpty()) {
-                            Game gameEntity = Game.builder()
-                                    .appid(game.getAppid())
-                                    .name(game.getName())
-                                    .build();
+                        App app = games.get(i);
+                        if (gameNeedsUpdate(app)) {
+                            Game game = new Game(app.getAppid(), app.getName());
 
-                            if (gameRepository.existsByAppid(gameEntity.getAppid())) continue;
-
-                            // Get steam score
-                            String resultJson = steamStoreClient.getSteamScore(game.getAppid());
-                            String jsonPathToSteamScore = "$.query_summary.review_score_desc";
-                            String steamScore = JsonPath.parse(resultJson).read(jsonPathToSteamScore);
-
-                            gameEntity.setSteamScore(steamScore);
-
-                            // Get metacritic score
-                            String jsonPathToMetacriticScore = "$..metacritic.score";
-                            String metacriticScoreSuccessJsonPath = "$." + game.getAppid() + ".success";
-
-                            String metacriticScore = "No Score";
+                            // Set game info
                             try {
-                                resultJson = steamStoreClient.getMetacriticScore(game.getAppid());
-                                if (JsonPath.parse(resultJson).read(metacriticScoreSuccessJsonPath).toString().compareToIgnoreCase("true") == 0) {
-                                    metacriticScore = JsonPath.parse(resultJson).read(jsonPathToMetacriticScore);
-                                }
+                                setSteamScore(app, game);
+                                setBasicInfoAndMetacriticScore(app, game);
+                            } catch (IllegalStateException e) {
+                                log.info(e.getMessage());
+                                continue;
                             } catch (FeignException.TooManyRequests e) {
                                 log.info("Too Many Request.. Try tomorrow");
                                 break;
-                            } catch (Exception e) {
-                                metacriticScore = "No Score";
                             }
-                            gameEntity.setMetacriticScore(metacriticScore);
 
                             // Save Entity
                             try {
-                                gameEntity = gameRepository.save(gameEntity);
-                                log.info("Successfully Saved! {}", gameEntity);
-                            } catch (Exception e) {}
+                                game = gameRepository.save(game);
+                                log.info("Successfully Saved! {}", game);
+                            } catch (Exception e) {
+                            }
                         }
                     }
                     log.info("Finished get game ids and names!");
@@ -105,18 +80,54 @@ public class BatchGameInfo {
                 .build();
     }
 
-//    @Bean
-//    public Step getGameDetail() {
-//        return stepBuilderFactory
-//                .get("GetGameDetail")
-//                .tasklet((contribution, chunkContext) -> {
-//                    log.info("Start get game detail...");
-//                    List<SimpleGame> simpleGames = simpleGameRepository.findAll();
-//                    simpleGames.forEach(simpleGame -> {
-//                        int appid = simpleGame.getAppid();
-//
-//                    });
-//                })
-//                .build();
-//    }
+    private void setSteamScore(App app, Game game) {
+        String resultJson = steamStoreClient.getSteamScore(app.getAppid());
+        String steamScore = JsonPath.parse(resultJson).read(JSONPATH_STEAM_SCORE);
+        game.setSteamScore(steamScore);
+    }
+
+    private void setBasicInfoAndMetacriticScore(App app, Game game) {
+        String metacriticScore = "No Score";
+        String gameDetailJson = steamStoreClient.getGameDetail(app.getAppid());
+
+        // check app type
+        String type = JsonPath.parse(gameDetailJson).read(JSONPATH_TYPE).toString();
+        if (!type.contains("game")) {
+            throw new IllegalStateException("It is not a game : " + type);
+        }
+
+        // Set game basic info
+        JSONArray imageUrls = JsonPath.parse(gameDetailJson).read(JSONPATH_IMAGE_URL);
+        if (imageUrls.size() > 0) {
+            game.setImageUrl(imageUrls.get(0).toString());
+        }
+        game.setPublishers(JsonPath.parse(gameDetailJson).read(JSONPATH_PUBLISHERS).toString());
+        game.setDevelopers(JsonPath.parse(gameDetailJson).read(JSONPATH_DEVELOPERS).toString());
+        JSONArray jsonArray = JsonPath.parse(gameDetailJson).read(JSONPATH_RELEASEDT);
+        if (jsonArray.size() > 0) {
+            game.setReleaseDt(jsonArray.get(0).toString());
+        }
+
+        // Set metacritic score
+        try {
+            if (JsonPath.parse(gameDetailJson).read(getJsonpathMetacriticSuccess(app.getAppid())).toString().compareToIgnoreCase("true") == 0) {
+                metacriticScore = JsonPath.parse(gameDetailJson).read(JSONPATH_METACRITIC_SCORE);
+            }
+        } catch (FeignException.TooManyRequests e) {
+            throw e;
+        } catch (Exception e) {
+            metacriticScore = "No Score";
+        }
+        game.setMetacriticScore(metacriticScore);
+    }
+
+    private boolean gameNeedsUpdate(App app) {
+        if (app == null || app.getName().isEmpty()) return false;
+        Optional<Game> optionalGame = gameRepository.findByAppId(app.getAppid());
+        if (optionalGame.isEmpty()) return true;
+
+        Game game = optionalGame.get();
+        LocalDateTime oneMonthAgo = LocalDateTime.now().minusMonths(1);
+        return game.getModifiedDt().isBefore(oneMonthAgo); // 마지막 업데이트가 한달 전이라면 정보 갱신
+    }
 }

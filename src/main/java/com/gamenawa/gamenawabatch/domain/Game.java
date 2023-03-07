@@ -1,14 +1,17 @@
 package com.gamenawa.gamenawabatch.domain;
 
 import com.sun.istack.NotNull;
-import lombok.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 
 import javax.persistence.*;
-import java.time.LocalDateTime;
 
 @Entity
 @Getter
 @Setter
+@ToString
 @NoArgsConstructor
 @Inheritance(strategy = InheritanceType.SINGLE_TABLE)
 public class Game extends BaseEntity {
@@ -30,25 +33,18 @@ public class Game extends BaseEntity {
 
     private String opencriticTopcriticScore;
 
-    private String developer;
+    private String developers;
 
-    private String publisher;
+    private String publishers;
 
     private String imageUrl;
 
-    private LocalDateTime releaseDt;
+    private String releaseDt;
 
-    @Builder
-    public Game(int appId, String name, String steamScore, String metacriticScore, String developer, String publisher, String imageUrl, LocalDateTime releaseDt) {
+    public Game(int appId, String name) {
         this.appId = appId;
         this.name = name;
-        this.steamScore = steamScore;
-        this.metacriticScore = metacriticScore;
         this.opencriticMedianScore = "No Score";
         this.opencriticTopcriticScore = "No Score";
-        this.developer = developer;
-        this.publisher = publisher;
-        this.imageUrl = imageUrl;
-        this.releaseDt = releaseDt;
     }
 }
