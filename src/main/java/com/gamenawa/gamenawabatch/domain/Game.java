@@ -1,23 +1,26 @@
 package com.gamenawa.gamenawabatch.domain;
 
 import com.sun.istack.NotNull;
-import lombok.*;
-import org.hibernate.annotations.ColumnDefault;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.Id;
+import javax.persistence.*;
 
 @Entity
-@Data
+@Getter
+@Setter
+@ToString
 @NoArgsConstructor
-public class Game {
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+public class Game extends BaseEntity {
     @Id
     @GeneratedValue
     private Long id;
 
     @NotNull
-    private int appid;
+    private int appId;
 
     @NotNull
     private String name;
@@ -26,11 +29,22 @@ public class Game {
 
     private String metacriticScore;
 
-    @Builder
-    public Game(int appid, String name, String steamScore, String metacriticScore) {
-        this.appid = appid;
+    private String opencriticMedianScore;
+
+    private String opencriticTopcriticScore;
+
+    private String developers;
+
+    private String publishers;
+
+    private String imageUrl;
+
+    private String releaseDt;
+
+    public Game(int appId, String name) {
+        this.appId = appId;
         this.name = name;
-        this.steamScore = steamScore;
-        this.metacriticScore = metacriticScore;
+        this.opencriticMedianScore = "No Score";
+        this.opencriticTopcriticScore = "No Score";
     }
 }

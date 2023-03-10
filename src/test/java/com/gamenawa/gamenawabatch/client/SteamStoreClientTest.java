@@ -14,7 +14,7 @@ public class SteamStoreClientTest {
     @Test
     void testSteamStoreClient() {
         String jsonPathToMetaScore = "*.metacritic.score";
-        String resultJson = subject.getMetacriticScore(218620);
+        String resultJson = subject.getGameDetail(218620);
         String score = JsonPath.parse(resultJson).read(jsonPathToMetaScore);
         System.out.println("score = " + score);
     }
